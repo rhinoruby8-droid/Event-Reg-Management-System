@@ -19,6 +19,7 @@ import { Header } from './components/Header';
 import { KpiBar } from './components/KpiBar';
 import { LoginScreen } from './components/LoginScreen';
 import { QuotaModal, PartnerQuotaUpdate } from './components/QuotaModal';
+import { RegFormAutoFillModal } from './components/RegFormAutoFillModal';
 import { TicketColumnModal } from './components/TicketColumnModal';
 import { ToastContainer } from './components/ToastContainer';
 import { ExportReportType, WorkspaceToolbar } from './components/WorkspaceToolbar';
@@ -122,6 +123,37 @@ export default function App() {
   const [changeRequestTarget, setChangeRequestTarget] = useState<Delegate | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Delegate | null>(null);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [regAutoFillState, setRegAutoFillState] = useState<{
+    open: boolean;
+    delegateId: string | null;
+  }>({ open: false, delegateId: null });
+  const [registeredDelegateIds, setRegisteredDelegateIds] = useState<Record<string, boolean>>(() => {
+    try {
+      const raw = localStorage.getItem('pce_registered_delegate_ids_v1');
+      if (raw) return JSON.parse(raw) as Record<string, boolean>;
+    } catch {
+      // ignore
+    }
+    return {};
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'pce_registered_delegate_ids_v1',
+        JSON.stringify(registeredDelegateIds)
+      );
+    } catch {
+      // ignore
+    }
+  }, [registeredDelegateIds]);
+
+  const handleToggleRegisteredDelegate = useCallback((delegateId: string) => {
+    setRegisteredDelegateIds((prev) => ({
+      ...prev,
+      [delegateId]: !prev[delegateId],
+    }));
+  }, []);
 
   // Toasts
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -1877,6 +1909,12 @@ export default function App() {
         onOpenExcelImport={() =>
           setExcelImportState({ open: true, mode: 'delegates' })
         }
+        onOpenRegAutoFill={() =>
+          setRegAutoFillState({
+            open: true,
+            delegateId: visibleDelegates[0]?.id ?? null,
+          })
+        }
         onToggleGlobalFreeze={handleToggleGlobalFreeze}
         onExportReport={handleExportReport}
       />
@@ -1902,6 +1940,10 @@ export default function App() {
           onDuplicateRow={handleDuplicateRow}
           onDeleteRow={(delegate) => setDeleteTarget(delegate)}
           onRequestChange={(delegate) => setChangeRequestTarget(delegate)}
+          onOpenRegAutoFill={(delegate) =>
+            setRegAutoFillState({ open: true, delegateId: delegate.id })
+          }
+          registeredDelegateIds={registeredDelegateIds}
           onAddRow={handleAddRow}
           hasActiveFilters={searchQuery.trim().length > 0 || activeFilter !== 'all'}
           onResetFilters={() => {
@@ -2007,6 +2049,21 @@ export default function App() {
         auditLogs={scopedAuditLogs}
         changeRequests={scopedChangeRequests}
         onResolveChangeRequest={handleResolveChangeRequest}
+      />
+
+      <RegFormAutoFillModal
+        isOpen={regAutoFillState.open}
+        onClose={() =>
+          setRegAutoFillState((prev) => ({ ...prev, open: false }))
+        }
+        delegates={visibleDelegates.length > 0 ? visibleDelegates : scopedDelegates}
+        initialDelegateId={regAutoFillState.delegateId}
+        activeEvent={activeEvent}
+        ticketCategories={portalState.ticketCategories}
+        customTicketFields={portalState.customTicketFields}
+        registeredDelegateIds={registeredDelegateIds}
+        onToggleRegistered={handleToggleRegisteredDelegate}
+        onNotify={(type, title, detail) => pushToast(type, title, detail)}
       />
 
       <ChangeRequestModal

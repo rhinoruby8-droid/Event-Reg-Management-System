@@ -4,6 +4,7 @@ import {
   Building2,
   Calendar,
   ChevronDown,
+  ClipboardCheck,
   ClipboardPaste,
   Download,
   FileSpreadsheet,
@@ -49,6 +50,7 @@ interface WorkspaceToolbarProps {
   onOpenTicketColumnModal: () => void;
   onOpenBulkPaste: () => void;
   onOpenExcelImport: () => void;
+  onOpenRegAutoFill: () => void;
   onToggleGlobalFreeze: () => void;
   onExportReport: (type: ExportReportType) => void;
 }
@@ -74,6 +76,7 @@ export const WorkspaceToolbar: React.FC<WorkspaceToolbarProps> = ({
   onOpenTicketColumnModal,
   onOpenBulkPaste,
   onOpenExcelImport,
+  onOpenRegAutoFill,
   onToggleGlobalFreeze,
   onExportReport,
 }) => {
@@ -236,8 +239,18 @@ export const WorkspaceToolbar: React.FC<WorkspaceToolbarProps> = ({
           )}
         </div>
 
-        {/* Right: Bulk Tools & Export Dropdown */}
+        {/* Right: Bulk Tools, Reg Form Auto-Fill & Export Dropdown */}
         <div className="flex items-center flex-wrap gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={onOpenRegAutoFill}
+            className="h-9 px-3 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
+            title="Copy-paste & auto-fill the live Registration Form from delegate rows"
+          >
+            <ClipboardCheck className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Fill Reg Form</span>
+          </button>
+
           <button
             type="button"
             disabled={!canCreate}

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
+  ClipboardCheck,
   Copy,
   Lock,
   MessageSquarePlus,
@@ -52,6 +53,8 @@ interface DelegateGridProps {
   onDuplicateRow: (delegateId: string) => void;
   onDeleteRow: (delegate: Delegate) => void;
   onRequestChange: (delegate: Delegate) => void;
+  onOpenRegAutoFill: (delegate: Delegate) => void;
+  registeredDelegateIds?: Record<string, boolean>;
   onAddRow: () => void;
   hasActiveFilters: boolean;
   onResetFilters: () => void;
@@ -416,6 +419,8 @@ export const DelegateGrid: React.FC<DelegateGridProps> = ({
   onDuplicateRow,
   onDeleteRow,
   onRequestChange,
+  onOpenRegAutoFill,
+  registeredDelegateIds = {},
   onAddRow,
   hasActiveFilters,
   onResetFilters,
@@ -548,7 +553,7 @@ export const DelegateGrid: React.FC<DelegateGridProps> = ({
             {/* Sticky Left Col 1: Status & Actions */}
             <th
               scope="col"
-              className="sticky top-0 left-0 z-40 bg-slate-100 border-b border-r border-slate-200 px-3 py-2.5 w-[198px] min-w-[198px] whitespace-nowrap"
+              className="sticky top-0 left-0 z-40 bg-slate-100 border-b border-r border-slate-200 px-3 py-2.5 w-[222px] min-w-[222px] whitespace-nowrap"
             >
               Tickets / Actions
             </th>
@@ -556,7 +561,7 @@ export const DelegateGrid: React.FC<DelegateGridProps> = ({
             {/* Sticky Left Col 2: First Name */}
             <th
               scope="col"
-              className="sticky top-0 left-[198px] z-40 bg-slate-100 border-b border-r border-slate-200 px-2.5 py-2.5 w-[138px] min-w-[138px] whitespace-nowrap"
+              className="sticky top-0 left-[222px] z-40 bg-slate-100 border-b border-r border-slate-200 px-2.5 py-2.5 w-[138px] min-w-[138px] whitespace-nowrap"
             >
               <EditableHeaderContent
                 title={colTitle('firstName')}
@@ -569,7 +574,7 @@ export const DelegateGrid: React.FC<DelegateGridProps> = ({
             {/* Sticky Left Col 3: Last Name */}
             <th
               scope="col"
-              className="sticky top-0 left-[336px] z-40 bg-slate-100 border-b border-r border-slate-200 px-2.5 py-2.5 w-[138px] min-w-[138px] whitespace-nowrap sticky-col-shadow"
+              className="sticky top-0 left-[360px] z-40 bg-slate-100 border-b border-r border-slate-200 px-2.5 py-2.5 w-[138px] min-w-[138px] whitespace-nowrap sticky-col-shadow"
             >
               <EditableHeaderContent
                 title={colTitle('lastName')}
@@ -840,6 +845,24 @@ export const DelegateGrid: React.FC<DelegateGridProps> = ({
 
                     {/* Row Action Controls */}
                     <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => onOpenRegAutoFill(delegate)}
+                        title={
+                          registeredDelegateIds[delegate.id]
+                            ? 'Marked Registered — click to open Registration Form Auto-Fill'
+                            : 'Open Registration Form Auto-Fill / Copy-Paste for this delegate'
+                        }
+                        aria-label="Open Registration Form Auto-Fill"
+                        className={`p-1 rounded transition-colors ${
+                          registeredDelegateIds[delegate.id]
+                            ? 'text-emerald-700 bg-emerald-100 hover:bg-emerald-200/80'
+                            : 'text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50'
+                        }`}
+                      >
+                        <ClipboardCheck className="w-3.5 h-3.5" />
+                      </button>
+
                       {isAdmin ? (
                         <button
                           type="button"
@@ -913,7 +936,7 @@ export const DelegateGrid: React.FC<DelegateGridProps> = ({
 
                 {/* Sticky Left Col 2: 1. First Name */}
                 <td
-                  className={`sticky left-[198px] z-20 ${stickyCellBg} border-b border-r border-slate-200 p-0`}
+                  className={`sticky left-[222px] z-20 ${stickyCellBg} border-b border-r border-slate-200 p-0`}
                 >
                   <GridTextCell
                     rowIndex={rowIndex}
@@ -929,7 +952,7 @@ export const DelegateGrid: React.FC<DelegateGridProps> = ({
 
                 {/* Sticky Left Col 3: 2. Last Name */}
                 <td
-                  className={`sticky left-[336px] z-20 ${stickyCellBg} border-b border-r border-slate-200 p-0 sticky-col-shadow`}
+                  className={`sticky left-[360px] z-20 ${stickyCellBg} border-b border-r border-slate-200 p-0 sticky-col-shadow`}
                 >
                   <GridTextCell
                     rowIndex={rowIndex}
