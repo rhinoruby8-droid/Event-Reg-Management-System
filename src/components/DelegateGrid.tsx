@@ -10,6 +10,7 @@ import {
   Unlock,
 } from 'lucide-react';
 import { canEditDelegate } from '../services/auth';
+import { getDelegateDayTicketCount } from '../services/quota';
 import { getRowErrorCount, ValidationMap } from '../services/validation';
 import {
   AuthSession,
@@ -547,15 +548,15 @@ export const DelegateGrid: React.FC<DelegateGridProps> = ({
             {/* Sticky Left Col 1: Status & Actions */}
             <th
               scope="col"
-              className="sticky top-0 left-0 z-40 bg-slate-100 border-b border-r border-slate-200 px-3 py-2.5 w-[176px] min-w-[176px] whitespace-nowrap"
+              className="sticky top-0 left-0 z-40 bg-slate-100 border-b border-r border-slate-200 px-3 py-2.5 w-[198px] min-w-[198px] whitespace-nowrap"
             >
-              Status / Actions
+              Tickets / Actions
             </th>
 
             {/* Sticky Left Col 2: First Name */}
             <th
               scope="col"
-              className="sticky top-0 left-[176px] z-40 bg-slate-100 border-b border-r border-slate-200 px-2.5 py-2.5 w-[138px] min-w-[138px] whitespace-nowrap"
+              className="sticky top-0 left-[198px] z-40 bg-slate-100 border-b border-r border-slate-200 px-2.5 py-2.5 w-[138px] min-w-[138px] whitespace-nowrap"
             >
               <EditableHeaderContent
                 title={colTitle('firstName')}
@@ -568,7 +569,7 @@ export const DelegateGrid: React.FC<DelegateGridProps> = ({
             {/* Sticky Left Col 3: Last Name */}
             <th
               scope="col"
-              className="sticky top-0 left-[314px] z-40 bg-slate-100 border-b border-r border-slate-200 px-2.5 py-2.5 w-[138px] min-w-[138px] whitespace-nowrap sticky-col-shadow"
+              className="sticky top-0 left-[336px] z-40 bg-slate-100 border-b border-r border-slate-200 px-2.5 py-2.5 w-[138px] min-w-[138px] whitespace-nowrap sticky-col-shadow"
             >
               <EditableHeaderContent
                 title={colTitle('lastName')}
@@ -760,7 +761,18 @@ export const DelegateGrid: React.FC<DelegateGridProps> = ({
             const editable = canEditDelegate(session, delegate, isGlobalFrozen);
             const rowErrors = validationMap[delegate.id] || {};
             const errorCount = getRowErrorCount(rowErrors);
-            const isChargeable = delegate.ticketType === 'Chargeable Extra';
+            const rowDayTotal = getDelegateDayTicketCount(delegate);
+            const rowPayable =
+              typeof delegate.payableTicketsCount === 'number'
+                ? delegate.payableTicketsCount
+                : delegate.ticketType === 'Chargeable Extra'
+                ? rowDayTotal
+                : 0;
+            const rowComp =
+              typeof delegate.compTicketsUsed === 'number'
+                ? delegate.compTicketsUsed
+                : Math.max(0, rowDayTotal - rowPayable);
+            const isChargeable = rowPayable > 0;
             const rowBg =
               errorCount > 0
                 ? 'bg-rose-50/30'
@@ -789,17 +801,28 @@ export const DelegateGrid: React.FC<DelegateGridProps> = ({
 
                       {isChargeable ? (
                         <span
-                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300/80 whitespace-nowrap"
-                          title="Exceeds complimentary pass quota — billed as Chargeable Extra"
+                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold font-mono tabular-nums bg-amber-100 text-amber-800 border border-amber-300/80 whitespace-nowrap"
+                          title={
+                            rowComp > 0
+                              ? `${rowComp} Complimentary + ${rowPayable} Payable day ticket(s) — exceeds partner comp ticket pool`
+                              : `${rowPayable} Payable day ticket(s) — exceeds partner complimentary ticket pool`
+                          }
                         >
-                          Extra
+                          {rowComp > 0 ? `+${rowPayable} Pay` : `Payable (${rowPayable})`}
+                        </span>
+                      ) : rowComp > 0 ? (
+                        <span
+                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium font-mono tabular-nums bg-slate-100 text-slate-700 whitespace-nowrap"
+                          title={`${rowComp} day ticket(s) deducted from partner complimentary ticket pool`}
+                        >
+                          Comp ({rowComp})
                         </span>
                       ) : (
                         <span
-                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 whitespace-nowrap"
-                          title="Included within partner complimentary pass quota"
+                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium font-mono tabular-nums bg-slate-50 text-slate-400 border border-slate-200 whitespace-nowrap"
+                          title="No Day 1 / Day 2 / Day 3 tickets selected yet"
                         >
-                          Comp
+                          0 tkt
                         </span>
                       )}
 
@@ -890,7 +913,7 @@ export const DelegateGrid: React.FC<DelegateGridProps> = ({
 
                 {/* Sticky Left Col 2: 1. First Name */}
                 <td
-                  className={`sticky left-[176px] z-20 ${stickyCellBg} border-b border-r border-slate-200 p-0`}
+                  className={`sticky left-[198px] z-20 ${stickyCellBg} border-b border-r border-slate-200 p-0`}
                 >
                   <GridTextCell
                     rowIndex={rowIndex}
@@ -906,7 +929,7 @@ export const DelegateGrid: React.FC<DelegateGridProps> = ({
 
                 {/* Sticky Left Col 3: 2. Last Name */}
                 <td
-                  className={`sticky left-[314px] z-20 ${stickyCellBg} border-b border-r border-slate-200 p-0 sticky-col-shadow`}
+                  className={`sticky left-[336px] z-20 ${stickyCellBg} border-b border-r border-slate-200 p-0 sticky-col-shadow`}
                 >
                   <GridTextCell
                     rowIndex={rowIndex}

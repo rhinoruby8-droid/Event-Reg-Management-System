@@ -40,7 +40,7 @@ export const AddPartnerModal: React.FC<AddPartnerModalProps> = ({
   const [name, setName] = useState('');
   const [tier, setTier] = useState<string>(PARTNER_TIERS[1]);
   const [standNumber, setStandNumber] = useState('');
-  const [complimentaryQuota, setComplimentaryQuota] = useState(5);
+  const [complimentaryQuota, setComplimentaryQuota] = useState(10);
   const [awardsQuota, setAwardsQuota] = useState(2);
   const [contactName, setContactName] = useState('');
   const [loginEmail, setLoginEmail] = useState('');
@@ -245,19 +245,22 @@ export const AddPartnerModal: React.FC<AddPartnerModalProps> = ({
                   htmlFor="partner-comp-quota"
                   className="block text-xs font-medium text-slate-700 mb-1"
                 >
-                  Complimentary Pass Quota
+                  Total Comp Tickets (Day 1/2/3 Pool)
                 </label>
                 <input
                   id="partner-comp-quota"
                   type="number"
                   min={0}
-                  max={200}
+                  max={500}
                   value={complimentaryQuota}
                   onChange={(e) =>
                     setComplimentaryQuota(Math.max(0, parseInt(e.target.value || '0', 10)))
                   }
                   className="w-full h-9 px-3 font-mono tabular-nums text-xs text-slate-900 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-600"
                 />
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Divided across Day 1, Day 2 &amp; Day 3; extra tickets are payable.
+                </p>
               </div>
 
               <div>

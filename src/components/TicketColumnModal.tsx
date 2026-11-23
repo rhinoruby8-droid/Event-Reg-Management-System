@@ -241,7 +241,7 @@ export const TicketColumnModal: React.FC<TicketColumnModalProps> = ({
                 Add New Event Ticket / Session Column
               </div>
               <p className="text-xs text-slate-500">
-                Adds a new Yes/No toggle column to the delegate spreadsheet, Excel import mapper, full exports, and optionally the live KPI header bar.
+                Adds a new Yes/No toggle column to the delegate spreadsheet, Partner Quotas menu, Excel import mapper, full exports, and optionally the live KPI header bar.
               </p>
 
               <div className="flex flex-col sm:flex-row gap-2.5">
@@ -349,7 +349,7 @@ export const TicketColumnModal: React.FC<TicketColumnModalProps> = ({
                 Add New Registration / Ticket Category
               </div>
               <p className="text-xs text-slate-500">
-                Customize the ticket types available in the Category dropdown (e.g., Media, Sponsor VIP, Gala Only, Day Pass).
+                Customize the ticket types available in the Category dropdown and Partner Quotas menu (e.g., Media, Sponsor VIP, Gala Only, Day Pass).
               </p>
               <div className="flex gap-2.5">
                 <input

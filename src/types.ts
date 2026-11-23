@@ -48,6 +48,10 @@ export interface PartnerCompany {
   standNumber: string;
   complimentaryQuota: number;
   awardsQuota: number;
+  /** Per-ticket quotas keyed by built-in session key (day1Workshop, day2, day3, stadiumTour) or customTicketField.id */
+  ticketQuotas?: Record<string, number>;
+  /** Per-registration-category quotas keyed by category label (Partner, Speaker, Exhibitor, VIP, Delegate, or custom categories) */
+  categoryQuotas?: Record<string, number>;
   primaryContactEmail: string;
 }
 
@@ -57,7 +61,8 @@ export interface UserAccount {
   password: string;
   name: string;
   role: UserRole;
-  eventId: string | null; // null for Super Admin (all events); string for Event Coordinator and Partner Admin
+  eventId: string | null; // null for Super Admin (all events); primary eventId for Event Coordinator and Partner Admin
+  eventIds?: string[]; // multiple assigned event IDs for Event Coordinators
   eventName?: string;
   partnerId: string | null; // null for Super Admin & Event Coordinator; string for Partner Admin
   partnerName?: string;
@@ -69,6 +74,7 @@ export interface AuthSession {
   name: string;
   role: UserRole;
   eventId: string | null;
+  eventIds?: string[];
   eventName?: string;
   partnerId: string | null;
   partnerName?: string;
@@ -107,6 +113,10 @@ export interface Delegate {
   partnerId: string;
   isLocked: boolean;
   ticketType: TicketType;
+  /** Number of Day 1/2/3 tickets on this row covered by partner complimentary ticket pool */
+  compTicketsUsed?: number;
+  /** Number of Day 1/2/3 tickets on this row exceeding partner comp pool (Payable) */
+  payableTicketsCount?: number;
   createdAt: string;
   updatedAt: string;
   updatedBy: string;
@@ -148,6 +158,7 @@ export type AuditActionType =
   | 'CONFIG_UPDATE'
   | 'EVENT_CREATE'
   | 'COORDINATOR_CREATE'
+  | 'COORDINATOR_UPDATE'
   | 'CHANGE_REQUEST'
   | 'RESOLVE_REQUEST';
 

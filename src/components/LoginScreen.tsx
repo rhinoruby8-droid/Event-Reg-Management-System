@@ -8,7 +8,7 @@ import {
   ShieldCheck,
   AlertCircle,
 } from 'lucide-react';
-import { authenticateUser } from '../services/auth';
+import { authenticateUser, getCoordinatorEventIds } from '../services/auth';
 import { AuthSession, EventItem, UserAccount } from '../types';
 
 interface LoginScreenProps {
@@ -120,6 +120,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 {accounts.map((user) => {
                   const isAdmin = user.role === 'super_admin';
                   const isCoord = user.role === 'event_coordinator';
+                  const coordEventLabel = isCoord
+                    ? getCoordinatorEventIds(user)
+                        .map((id) => events.find((e) => e.id === id)?.name || id)
+                        .join(', ') || user.eventName || 'Event'
+                    : '';
                   return (
                     <button
                       key={user.id}
@@ -140,7 +145,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                             {isAdmin
                               ? 'Global Super Admin — All Events'
                               : isCoord
-                              ? `Event Coordinator — ${user.eventName || 'Event'} (Add Partners Only)`
+                              ? `Event Coordinator — ${coordEventLabel} (Add Partners Only)`
                               : `Partner Admin — ${user.partnerName}${
                                   user.eventName ? ` (${user.eventName})` : ''
                                 }`}

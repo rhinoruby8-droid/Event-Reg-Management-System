@@ -62,15 +62,27 @@ export function loadPortalState(): PortalState {
 
     const users =
       Array.isArray(parsed.users) && parsed.users.length > 0
-        ? parsed.users.map((u) => ({
-            ...u,
-            eventId:
+        ? parsed.users.map((u) => {
+            const resolvedEventId =
               u.role === 'super_admin'
                 ? null
                 : u.eventId !== undefined
                 ? u.eventId
-                : fallbackEventId,
-          }))
+                : fallbackEventId;
+            const resolvedEventIds =
+              u.role === 'event_coordinator'
+                ? Array.isArray(u.eventIds) && u.eventIds.length > 0
+                  ? Array.from(new Set(u.eventIds))
+                  : resolvedEventId
+                  ? [resolvedEventId]
+                  : []
+                : u.eventIds;
+            return {
+              ...u,
+              eventId: resolvedEventId,
+              ...(resolvedEventIds ? { eventIds: resolvedEventIds } : {}),
+            };
+          })
         : DEMO_USERS.map((u) => ({ ...u }));
 
     return {

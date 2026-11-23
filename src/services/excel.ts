@@ -1006,9 +1006,24 @@ function formatFullRow(
   partners: PartnerCompany[],
   customTicketFields: CustomTicketField[] = []
 ) {
+  const dayTotal = (d.day1Workshop ? 1 : 0) + (d.day2 ? 1 : 0) + (d.day3 ? 1 : 0);
+  const payableCount =
+    typeof d.payableTicketsCount === 'number'
+      ? d.payableTicketsCount
+      : d.ticketType === 'Chargeable Extra'
+      ? dayTotal
+      : 0;
+  const compCount =
+    typeof d.compTicketsUsed === 'number'
+      ? d.compTicketsUsed
+      : Math.max(0, dayTotal - payableCount);
+
   const base: Record<string, unknown> = {
     'Partner Account': getPartnerName(d.partnerId, partners),
-    'Pass Allocation': d.ticketType,
+    'Pass Allocation': payableCount > 0 ? 'Payable' : 'Complimentary',
+    'Day Tickets (D1+D2+D3)': dayTotal,
+    'Comp Tickets Used': compCount,
+    'Payable Tickets': payableCount,
     'Row Lock': d.isLocked ? 'Locked' : 'Unlocked',
     'First Name': d.firstName,
     'Last Name': d.lastName,

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   Building2,
+  Calendar,
   Eye,
   EyeOff,
   MapPin,
@@ -10,10 +11,13 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import { computePartnerDayPoolUsage } from '../services/quota';
 import { Delegate, EventItem, PartnerCompany, UserAccount } from '../types';
 
 interface CoordinatorWorkspaceProps {
   activeEvent: EventItem;
+  assignedEvents: EventItem[];
+  onSwitchEvent: (eventId: string) => void;
   partners: PartnerCompany[];
   delegates: Delegate[];
   users: UserAccount[];
@@ -23,6 +27,8 @@ interface CoordinatorWorkspaceProps {
 
 export const CoordinatorWorkspace: React.FC<CoordinatorWorkspaceProps> = ({
   activeEvent,
+  assignedEvents,
+  onSwitchEvent,
   partners,
   delegates,
   users,
@@ -45,14 +51,6 @@ export const CoordinatorWorkspace: React.FC<CoordinatorWorkspaceProps> = ({
       delegateCount: delegates.length,
     };
   }, [partners, delegates]);
-
-  const delegateCountByPartner = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const d of delegates) {
-      counts.set(d.partnerId, (counts.get(d.partnerId) ?? 0) + 1);
-    }
-    return counts;
-  }, [delegates]);
 
   const userByPartner = useMemo(() => {
     const map = new Map<string, UserAccount>();
@@ -145,7 +143,31 @@ export const CoordinatorWorkspace: React.FC<CoordinatorWorkspaceProps> = ({
       {/* Toolbar */}
       <div className="bg-slate-50 border-b border-slate-200 px-5 lg:px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center flex-wrap gap-3 flex-1 min-w-0">
-          <div className="relative w-full sm:w-80">
+          {assignedEvents.length > 1 && (
+            <div className="flex items-center gap-1.5">
+              <label
+                htmlFor="coord-event-switcher"
+                className="text-xs font-medium text-slate-600 whitespace-nowrap flex items-center gap-1"
+              >
+                <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                <span>My Events ({assignedEvents.length}):</span>
+              </label>
+              <select
+                id="coord-event-switcher"
+                value={activeEvent.id}
+                onChange={(e) => onSwitchEvent(e.target.value)}
+                className="h-9 px-2.5 text-xs font-semibold text-slate-900 bg-white border border-indigo-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-600"
+              >
+                {assignedEvents.map((ev) => (
+                  <option key={ev.id} value={ev.id}>
+                    {ev.name} ({ev.city.split(',')[0]})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="relative w-full sm:w-72">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
@@ -237,13 +259,13 @@ export const CoordinatorWorkspace: React.FC<CoordinatorWorkspaceProps> = ({
                     <th className="px-4 py-3 whitespace-nowrap">Sponsorship Tier</th>
                     <th className="px-4 py-3 whitespace-nowrap">Stand / Booth</th>
                     <th className="px-4 py-3 whitespace-nowrap text-right">
-                      Comp Pass Quota
+                      Comp Ticket Pool
                     </th>
                     <th className="px-4 py-3 whitespace-nowrap text-right">
                       Awards Seats
                     </th>
                     <th className="px-4 py-3 whitespace-nowrap text-right">
-                      Delegates Registered
+                      Day Tickets Used
                     </th>
                     <th className="px-4 py-3 whitespace-nowrap">Primary Contact</th>
                     <th className="px-4 py-3 whitespace-nowrap">
@@ -264,7 +286,13 @@ export const CoordinatorWorkspace: React.FC<CoordinatorWorkspaceProps> = ({
                   ) : (
                     filteredPartners.map((partner) => {
                       const account = userByPartner.get(partner.id);
-                      const regCount = delegateCountByPartner.get(partner.id) ?? 0;
+                      const partnerDelegates = delegates.filter(
+                        (d) => d.partnerId === partner.id
+                      );
+                      const poolUsage = computePartnerDayPoolUsage(
+                        partner,
+                        partnerDelegates
+                      );
                       const isRevealed = account ? Boolean(revealedUserIds[account.id]) : false;
 
                       return (
@@ -290,12 +318,14 @@ export const CoordinatorWorkspace: React.FC<CoordinatorWorkspaceProps> = ({
                           <td className="px-4 py-3.5 text-right font-mono tabular-nums whitespace-nowrap">
                             <span
                               className={
-                                regCount > partner.complimentaryQuota
+                                poolUsage.payableTickets > 0
                                   ? 'text-amber-700 font-semibold'
                                   : 'text-slate-700'
                               }
                             >
-                              {regCount}
+                              {poolUsage.totalDayTickets}
+                              {poolUsage.payableTickets > 0 &&
+                                ` (+${poolUsage.payableTickets} Pay)`}
                             </span>
                           </td>
                           <td className="px-4 py-3.5 text-slate-700 whitespace-nowrap">

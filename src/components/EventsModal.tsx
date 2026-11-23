@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   Calendar,
@@ -8,9 +8,12 @@ import {
   Globe,
   MapPin,
   Plus,
+  UserCheck,
   UserPlus,
+  Users,
   X,
 } from 'lucide-react';
+import { getCoordinatorEventIds } from '../services/auth';
 import { Delegate, EventItem, PartnerCompany, UserAccount } from '../types';
 
 export interface NewEventPayload {
@@ -21,6 +24,7 @@ export interface NewEventPayload {
   dates: string;
   status: EventItem['status'];
   switchToEvent: boolean;
+  assignCoordinatorIds: string[];
   createCoordinator: boolean;
   coordinatorName: string;
   coordinatorEmail: string;
@@ -28,7 +32,7 @@ export interface NewEventPayload {
 }
 
 export interface NewCoordinatorPayload {
-  eventId: string;
+  eventIds: string[];
   name: string;
   email: string;
   password: string;
@@ -36,7 +40,7 @@ export interface NewCoordinatorPayload {
 
 interface EventsModalProps {
   isOpen: boolean;
-  initialTab?: 'list' | 'create';
+  initialTab?: 'list' | 'coordinators' | 'create';
   onClose: () => void;
   events: EventItem[];
   currentEventId: string;
@@ -46,6 +50,7 @@ interface EventsModalProps {
   onSwitchEvent: (eventId: string) => void;
   onCreateEvent: (payload: NewEventPayload) => void;
   onCreateCoordinator: (payload: NewCoordinatorPayload) => void;
+  onUpdateCoordinatorEvents: (userId: string, nextEventIds: string[]) => void;
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -62,8 +67,11 @@ export const EventsModal: React.FC<EventsModalProps> = ({
   onSwitchEvent,
   onCreateEvent,
   onCreateCoordinator,
+  onUpdateCoordinatorEvents,
 }) => {
-  const [activeTab, setActiveTab] = useState<'list' | 'create'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'list' | 'coordinators' | 'create'>(
+    initialTab
+  );
 
   // Add Event form state
   const [name, setName] = useState('');
@@ -73,19 +81,34 @@ export const EventsModal: React.FC<EventsModalProps> = ({
   const [dates, setDates] = useState('');
   const [status, setStatus] = useState<EventItem['status']>('upcoming');
   const [switchToEvent, setSwitchToEvent] = useState(true);
-  const [createCoordinator, setCreateCoordinator] = useState(true);
+  const [assignExistingCoordIds, setAssignExistingCoordIds] = useState<string[]>([]);
+  const [createCoordinator, setCreateCoordinator] = useState(false);
   const [coordinatorName, setCoordinatorName] = useState('');
   const [coordinatorEmail, setCoordinatorEmail] = useState('');
   const [coordinatorPassword, setCoordinatorPassword] = useState('coord123');
   const [showCoordPassword, setShowCoordPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Inline Add Coordinator for an existing event
+  // Inline Assign / Create Coordinator inside All Events tab
   const [addingCoordForEventId, setAddingCoordForEventId] = useState<string | null>(null);
+  const [selectedExistingCoordId, setSelectedExistingCoordId] = useState('');
   const [inlineCoordName, setInlineCoordName] = useState('');
   const [inlineCoordEmail, setInlineCoordEmail] = useState('');
   const [inlineCoordPassword, setInlineCoordPassword] = useState('coord123');
   const [inlineCoordError, setInlineCoordError] = useState<string | null>(null);
+
+  // Dedicated Coordinators Tab — Create Multi-Event Coordinator form state
+  const [newCoordName, setNewCoordName] = useState('');
+  const [newCoordEmail, setNewCoordEmail] = useState('');
+  const [newCoordPassword, setNewCoordPassword] = useState('coord123');
+  const [newCoordEventIds, setNewCoordEventIds] = useState<string[]>([]);
+  const [newCoordError, setNewCoordError] = useState<string | null>(null);
+  const [revealedCoordIds, setRevealedCoordIds] = useState<Record<string, boolean>>({});
+
+  const coordinators = useMemo(
+    () => users.filter((u) => u.role === 'event_coordinator'),
+    [users]
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -97,18 +120,29 @@ export const EventsModal: React.FC<EventsModalProps> = ({
       setDates('');
       setStatus('upcoming');
       setSwitchToEvent(true);
-      setCreateCoordinator(true);
+      setAssignExistingCoordIds([]);
+      setCreateCoordinator(false);
       setCoordinatorName('');
       setCoordinatorEmail('');
       setCoordinatorPassword('coord123');
       setShowCoordPassword(false);
       setFormError(null);
       setAddingCoordForEventId(null);
+      setSelectedExistingCoordId('');
       setInlineCoordError(null);
+      setNewCoordName('');
+      setNewCoordEmail('');
+      setNewCoordPassword('coord123');
+      setNewCoordEventIds(currentEventId ? [currentEventId] : events[0] ? [events[0].id] : []);
+      setNewCoordError(null);
     }
-  }, [isOpen, initialTab]);
+  }, [isOpen, initialTab, currentEventId, events]);
 
   if (!isOpen) return null;
+
+  const toggleInList = (list: string[], id: string): string[] => {
+    return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+  };
 
   const handleCreateEventSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -145,7 +179,7 @@ export const EventsModal: React.FC<EventsModalProps> = ({
 
     if (createCoordinator) {
       if (!trimmedCoordName) {
-        setFormError('Event Coordinator name is required (or uncheck coordinator creation).');
+        setFormError('Event Coordinator name is required (or uncheck new coordinator creation).');
         return;
       }
       if (!trimmedCoordEmail || !EMAIL_REGEX.test(trimmedCoordEmail)) {
@@ -172,6 +206,7 @@ export const EventsModal: React.FC<EventsModalProps> = ({
       dates: trimmedDates,
       status,
       switchToEvent,
+      assignCoordinatorIds: assignExistingCoordIds,
       createCoordinator,
       coordinatorName: trimmedCoordName,
       coordinatorEmail: trimmedCoordEmail,
@@ -187,6 +222,8 @@ export const EventsModal: React.FC<EventsModalProps> = ({
       setCity('');
       setVenue('');
       setDates('');
+      setAssignExistingCoordIds([]);
+      setCreateCoordinator(false);
       setCoordinatorName('');
       setCoordinatorEmail('');
       setCoordinatorPassword('coord123');
@@ -195,6 +232,10 @@ export const EventsModal: React.FC<EventsModalProps> = ({
 
   const handleOpenInlineCoord = (eventId: string, eventName: string) => {
     setAddingCoordForEventId(eventId);
+    const unassigned = coordinators.filter(
+      (c) => !getCoordinatorEventIds(c).includes(eventId)
+    );
+    setSelectedExistingCoordId(unassigned[0]?.id || '');
     setInlineCoordName('');
     const slug = eventName
       .toLowerCase()
@@ -204,6 +245,17 @@ export const EventsModal: React.FC<EventsModalProps> = ({
     setInlineCoordEmail(`coordinator.${slug || 'event'}@expo.com`);
     setInlineCoordPassword('coord123');
     setInlineCoordError(null);
+  };
+
+  const handleAssignExistingToEvent = (eventId: string) => {
+    if (!selectedExistingCoordId) return;
+    const coord = coordinators.find((c) => c.id === selectedExistingCoordId);
+    if (!coord) return;
+    const currentIds = getCoordinatorEventIds(coord);
+    if (!currentIds.includes(eventId)) {
+      onUpdateCoordinatorEvents(coord.id, [...currentIds, eventId]);
+    }
+    setAddingCoordForEventId(null);
   };
 
   const handleSubmitInlineCoord = (e: React.FormEvent, eventId: string) => {
@@ -232,12 +284,66 @@ export const EventsModal: React.FC<EventsModalProps> = ({
     }
 
     onCreateCoordinator({
-      eventId,
+      eventIds: [eventId],
       name: trimmedName,
       email: trimmedEmail,
       password: trimmedPassword,
     });
     setAddingCoordForEventId(null);
+  };
+
+  const handleCreateMultiEventCoord = (e: React.FormEvent) => {
+    e.preventDefault();
+    setNewCoordError(null);
+
+    const trimmedName = newCoordName.trim();
+    const trimmedEmail = newCoordEmail.trim().toLowerCase();
+    const trimmedPassword = newCoordPassword.trim();
+
+    if (!trimmedName) {
+      setNewCoordError('Coordinator name is required.');
+      return;
+    }
+    if (!trimmedEmail || !EMAIL_REGEX.test(trimmedEmail)) {
+      setNewCoordError('Please enter a valid coordinator email address.');
+      return;
+    }
+    if (users.some((u) => u.email.trim().toLowerCase() === trimmedEmail)) {
+      setNewCoordError(`The email "${trimmedEmail}" is already assigned to another login.`);
+      return;
+    }
+    if (trimmedPassword.length < 4) {
+      setNewCoordError('Password must be at least 4 characters.');
+      return;
+    }
+    if (newCoordEventIds.length === 0) {
+      setNewCoordError('Select at least one event to assign this coordinator to.');
+      return;
+    }
+
+    onCreateCoordinator({
+      eventIds: newCoordEventIds,
+      name: trimmedName,
+      email: trimmedEmail,
+      password: trimmedPassword,
+    });
+
+    setNewCoordName('');
+    setNewCoordEmail('');
+    setNewCoordPassword('coord123');
+  };
+
+  const handleToggleCoordinatorEvent = (coord: UserAccount, eventId: string) => {
+    const current = getCoordinatorEventIds(coord);
+    const exists = current.includes(eventId);
+    if (exists && current.length <= 1) {
+      // Keep at least 1 event assigned to a coordinator
+      return;
+    }
+    const next = exists
+      ? current.filter((id) => id !== eventId)
+      : [...current, eventId];
+    onUpdateCoordinatorEvents(coord.id, next);
   };
 
   return (
@@ -247,7 +353,7 @@ export const EventsModal: React.FC<EventsModalProps> = ({
       aria-modal="true"
       aria-labelledby="events-modal-title"
     >
-      <div className="bg-white border border-slate-200 rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
@@ -257,7 +363,7 @@ export const EventsModal: React.FC<EventsModalProps> = ({
                 Multi-Event Portfolio &amp; Coordinators
               </h2>
               <p className="text-xs text-slate-500">
-                Switch active event workspace, add new events across the year, or provision event-scoped coordinators.
+                Manage events across the year, view all coordinator logins, and assign one coordinator across multiple events.
               </p>
             </div>
           </div>
@@ -272,7 +378,7 @@ export const EventsModal: React.FC<EventsModalProps> = ({
         </div>
 
         {/* Segmented Tabs */}
-        <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
+        <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
           <div className="inline-flex p-1 bg-slate-200/70 rounded-lg">
             <button
               type="button"
@@ -285,6 +391,18 @@ export const EventsModal: React.FC<EventsModalProps> = ({
             >
               <Calendar className="w-3.5 h-3.5" />
               <span>All Events ({events.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('coordinators')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 ${
+                activeTab === 'coordinators'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Coordinators ({coordinators.length})</span>
             </button>
             <button
               type="button"
@@ -301,19 +419,22 @@ export const EventsModal: React.FC<EventsModalProps> = ({
           </div>
 
           <span className="text-xs text-slate-500 hidden sm:inline">
-            Global Super Admin controls all events
+            Coordinators are scoped to adding partners in assigned events only
           </span>
         </div>
 
-        {/* Body */}
-        {activeTab === 'list' ? (
+        {/* TAB 1: ALL EVENTS */}
+        {activeTab === 'list' && (
           <div className="p-6 overflow-y-auto flex-1 space-y-3">
             {events.map((ev) => {
               const isCurrent = ev.id === currentEventId;
               const evPartners = partners.filter((p) => p.eventId === ev.id);
               const evDelegates = delegates.filter((d) => d.eventId === ev.id);
-              const evCoordinators = users.filter(
-                (u) => u.role === 'event_coordinator' && u.eventId === ev.id
+              const evCoordinators = coordinators.filter((u) =>
+                getCoordinatorEventIds(u).includes(ev.id)
+              );
+              const unassignedCoords = coordinators.filter(
+                (u) => !getCoordinatorEventIds(u).includes(ev.id)
               );
 
               return (
@@ -374,7 +495,7 @@ export const EventsModal: React.FC<EventsModalProps> = ({
                         className="h-8 px-2.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap"
                       >
                         <UserPlus className="w-3.5 h-3.5 text-slate-500" />
-                        <span>Add Coordinator</span>
+                        <span>Assign / Add Coordinator</span>
                       </button>
 
                       {isCurrent ? (
@@ -397,7 +518,7 @@ export const EventsModal: React.FC<EventsModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Event Metrics & Coordinators Footer */}
+                  {/* Event Metrics & Assigned Coordinators */}
                   <div className="mt-3 pt-3 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-3 text-slate-600">
                       <span>
@@ -419,7 +540,7 @@ export const EventsModal: React.FC<EventsModalProps> = ({
 
                     <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="font-medium text-slate-500">
-                        Event Coordinator (Partners Only):
+                        Coordinators ({evCoordinators.length}):
                       </span>
                       {evCoordinators.length === 0 ? (
                         <span className="text-slate-400 italic">None assigned</span>
@@ -427,80 +548,343 @@ export const EventsModal: React.FC<EventsModalProps> = ({
                         evCoordinators.map((coord, idx) => (
                           <span key={coord.id} className="font-mono text-[11px] text-slate-800">
                             {idx > 0 ? ', ' : ''}
-                            {coord.email}
+                            {coord.name} ({coord.email})
                           </span>
                         ))
                       )}
                     </div>
                   </div>
 
-                  {/* Inline Add Coordinator Form */}
+                  {/* Inline Assign Existing OR Create New Coordinator Panel */}
                   {addingCoordForEventId === ev.id && (
-                    <form
-                      onSubmit={(e) => handleSubmitInlineCoord(e, ev.id)}
-                      className="mt-3 pt-3 border-t border-slate-200 bg-slate-50 -mx-4 -mb-4 px-4 py-3 rounded-b-xl space-y-2.5"
-                    >
+                    <div className="mt-3 pt-3 border-t border-slate-200 bg-slate-50 -mx-4 -mb-4 px-4 py-3.5 rounded-b-xl space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-slate-800">
-                          New Event Coordinator for {ev.name} (Scoped to Add Partners Only)
+                        <span className="text-xs font-bold text-slate-900">
+                          Assign or Create Coordinator for {ev.name}
                         </span>
                         <button
                           type="button"
                           onClick={() => setAddingCoordForEventId(null)}
                           className="text-xs text-slate-500 hover:text-slate-800"
                         >
-                          Cancel
+                          Close
                         </button>
                       </div>
 
-                      {inlineCoordError && (
-                        <div className="text-xs text-rose-700 flex items-center gap-1.5">
-                          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                          <span>{inlineCoordError}</span>
+                      {unassignedCoords.length > 0 && (
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 pb-3 border-b border-slate-200">
+                          <span className="text-xs font-medium text-slate-700 whitespace-nowrap">
+                            Assign Existing:
+                          </span>
+                          <select
+                            value={selectedExistingCoordId}
+                            onChange={(e) => setSelectedExistingCoordId(e.target.value)}
+                            className="h-8 px-2.5 text-xs bg-white border border-slate-300 rounded-lg flex-1 focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
+                          >
+                            {unassignedCoords.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name} ({c.email}) — currently on{' '}
+                                {getCoordinatorEventIds(c).length}{' '}
+                                {getCoordinatorEventIds(c).length === 1 ? 'event' : 'events'}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => handleAssignExistingToEvent(ev.id)}
+                            className="h-8 px-3 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg whitespace-nowrap shrink-0 flex items-center gap-1"
+                          >
+                            <UserCheck className="w-3.5 h-3.5" />
+                            <span>Assign to {ev.name}</span>
+                          </button>
                         </div>
                       )}
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        <input
-                          type="text"
-                          required
-                          value={inlineCoordName}
-                          onChange={(e) => setInlineCoordName(e.target.value)}
-                          placeholder="Coordinator Name"
-                          className="h-8 px-2.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-600"
-                        />
-                        <input
-                          type="email"
-                          required
-                          value={inlineCoordEmail}
-                          onChange={(e) => setInlineCoordEmail(e.target.value)}
-                          placeholder="coordinator@expo.com"
-                          className="h-8 px-2.5 font-mono text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-600"
-                        />
-                        <div className="flex gap-2">
+                      <form
+                        onSubmit={(e) => handleSubmitInlineCoord(e, ev.id)}
+                        className="space-y-2"
+                      >
+                        <div className="text-[11px] font-semibold text-slate-600">
+                          Or create a brand-new Coordinator login for {ev.name}:
+                        </div>
+
+                        {inlineCoordError && (
+                          <div className="text-xs text-rose-700 flex items-center gap-1.5">
+                            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                            <span>{inlineCoordError}</span>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                           <input
                             type="text"
                             required
-                            value={inlineCoordPassword}
-                            onChange={(e) => setInlineCoordPassword(e.target.value)}
-                            placeholder="Password"
-                            className="h-8 px-2.5 font-mono text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-600 flex-1 min-w-0"
+                            value={inlineCoordName}
+                            onChange={(e) => setInlineCoordName(e.target.value)}
+                            placeholder="Coordinator Name"
+                            className="h-8 px-2.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-600"
                           />
-                          <button
-                            type="submit"
-                            className="h-8 px-3 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg whitespace-nowrap shrink-0"
-                          >
-                            Save
-                          </button>
+                          <input
+                            type="email"
+                            required
+                            value={inlineCoordEmail}
+                            onChange={(e) => setInlineCoordEmail(e.target.value)}
+                            placeholder="coordinator@expo.com"
+                            className="h-8 px-2.5 font-mono text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-600"
+                          />
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              required
+                              value={inlineCoordPassword}
+                              onChange={(e) => setInlineCoordPassword(e.target.value)}
+                              placeholder="Password"
+                              className="h-8 px-2.5 font-mono text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-600 flex-1 min-w-0"
+                            />
+                            <button
+                              type="submit"
+                              className="h-8 px-3 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg whitespace-nowrap shrink-0"
+                            >
+                              Create
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    </form>
+                      </form>
+                    </div>
                   )}
                 </div>
               );
             })}
           </div>
-        ) : (
+        )}
+
+        {/* TAB 2: COORDINATORS DIRECTORY & MULTI-EVENT ASSIGNMENT */}
+        {activeTab === 'coordinators' && (
+          <div className="p-6 overflow-y-auto flex-1 space-y-5">
+            {/* Create Multi-Event Coordinator Form */}
+            <form
+              onSubmit={handleCreateMultiEventCoord}
+              className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3.5"
+            >
+              <div>
+                <div className="text-xs font-bold text-slate-900">
+                  Create Coordinator Login (Assign to One or Multiple Events)
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Created logins appear immediately in the Coordinators list below and on the sign-in page.
+                </p>
+              </div>
+
+              {newCoordError && (
+                <div
+                  role="alert"
+                  className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-center gap-1.5"
+                >
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{newCoordError}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label
+                    htmlFor="new-coord-name"
+                    className="block text-[11px] font-semibold text-slate-700 mb-1"
+                  >
+                    Full Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    id="new-coord-name"
+                    type="text"
+                    required
+                    value={newCoordName}
+                    onChange={(e) => setNewCoordName(e.target.value)}
+                    placeholder="e.g., Priya Nair"
+                    className="w-full h-9 px-3 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-600"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="new-coord-email"
+                    className="block text-[11px] font-semibold text-slate-700 mb-1"
+                  >
+                    Login Email <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    id="new-coord-email"
+                    type="email"
+                    required
+                    value={newCoordEmail}
+                    onChange={(e) => setNewCoordEmail(e.target.value)}
+                    placeholder="coordinator.apac@expo.com"
+                    className="w-full h-9 px-3 font-mono text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-600"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="new-coord-pass"
+                    className="block text-[11px] font-semibold text-slate-700 mb-1"
+                  >
+                    Password <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    id="new-coord-pass"
+                    type="text"
+                    required
+                    value={newCoordPassword}
+                    onChange={(e) => setNewCoordPassword(e.target.value)}
+                    className="w-full h-9 px-3 font-mono text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-600"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[11px] font-semibold text-slate-700 mb-2">
+                  Assign to Events ({newCoordEventIds.length} selected):
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {events.map((ev) => {
+                    const checked = newCoordEventIds.includes(ev.id);
+                    return (
+                      <label
+                        key={ev.id}
+                        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium cursor-pointer select-none transition-colors ${
+                          checked
+                            ? 'bg-indigo-50 border-indigo-300 text-indigo-900'
+                            : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() =>
+                            setNewCoordEventIds((prev) => toggleInList(prev, ev.id))
+                          }
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span>{ev.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  className="h-9 px-4 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors flex items-center gap-1.5"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>Create Coordinator Login</span>
+                </button>
+              </div>
+            </form>
+
+            {/* Existing Coordinators Directory List */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-slate-900">
+                  All Event Coordinator Logins ({coordinators.length})
+                </h3>
+                <span className="text-[11px] text-slate-500">
+                  Check or uncheck events below to assign a single coordinator to multiple events
+                </span>
+              </div>
+
+              {coordinators.length === 0 ? (
+                <div className="p-8 text-center border border-dashed border-slate-300 rounded-xl text-xs text-slate-500">
+                  No Event Coordinators created yet. Use the form above to provision your first coordinator login.
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-200 border border-slate-200 rounded-xl overflow-hidden bg-white">
+                  {coordinators.map((coord) => {
+                    const assignedIds = getCoordinatorEventIds(coord);
+                    const isRevealed = Boolean(revealedCoordIds[coord.id]);
+                    return (
+                      <div key={coord.id} className="p-4 space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div>
+                            <div className="text-sm font-bold text-slate-900">
+                              {coord.name}
+                            </div>
+                            <div className="mt-0.5 flex items-center gap-2 text-xs font-mono text-slate-600">
+                              <span>{coord.email}</span>
+                              <span aria-hidden="true" className="text-slate-300">
+                                ·
+                              </span>
+                              <span className="text-slate-500">
+                                {isRevealed ? coord.password : '••••••••'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setRevealedCoordIds((prev) => ({
+                                    ...prev,
+                                    [coord.id]: !prev[coord.id],
+                                  }))
+                                }
+                                aria-label={isRevealed ? 'Hide password' : 'Show password'}
+                                className="p-0.5 text-slate-400 hover:text-slate-700"
+                              >
+                                {isRevealed ? (
+                                  <EyeOff className="w-3.5 h-3.5" />
+                                ) : (
+                                  <Eye className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="text-xs font-mono tabular-nums text-slate-500">
+                            Assigned to{' '}
+                            <strong className="text-slate-900">{assignedIds.length}</strong>{' '}
+                            {assignedIds.length === 1 ? 'event' : 'events'}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          {events.map((ev) => {
+                            const isAssigned = assignedIds.includes(ev.id);
+                            const isOnlyEvent = isAssigned && assignedIds.length <= 1;
+                            return (
+                              <label
+                                key={ev.id}
+                                title={
+                                  isOnlyEvent
+                                    ? 'Coordinator must remain assigned to at least 1 event'
+                                    : `Toggle ${ev.name} access for ${coord.name}`
+                                }
+                                className={`inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-xs font-medium select-none transition-colors ${
+                                  isAssigned
+                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                                } ${isOnlyEvent ? 'cursor-not-allowed opacity-85' : 'cursor-pointer'}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isAssigned}
+                                  disabled={isOnlyEvent}
+                                  onChange={() =>
+                                    handleToggleCoordinatorEvent(coord, ev.id)
+                                  }
+                                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                />
+                                <span>{ev.name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: ADD NEW EVENT */}
+        {activeTab === 'create' && (
           <form
             onSubmit={handleCreateEventSubmit}
             className="flex-1 flex flex-col overflow-hidden"
@@ -637,8 +1021,47 @@ export const EventsModal: React.FC<EventsModalProps> = ({
                 </div>
               </div>
 
-              {/* Optional Event Coordinator Provisioning */}
-              <div className="border-t border-slate-200 pt-5 space-y-3.5">
+              {/* Assign Existing Coordinators */}
+              {coordinators.length > 0 && (
+                <div className="border-t border-slate-200 pt-4 space-y-2.5">
+                  <div className="text-xs font-semibold text-slate-800">
+                    Assign Existing Event Coordinator(s) to this Event
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {coordinators.map((coord) => {
+                      const checked = assignExistingCoordIds.includes(coord.id);
+                      return (
+                        <label
+                          key={coord.id}
+                          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs cursor-pointer select-none transition-colors ${
+                            checked
+                              ? 'bg-indigo-50 border-indigo-300 text-indigo-900 font-semibold'
+                              : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setAssignExistingCoordIds((prev) =>
+                                toggleInList(prev, coord.id)
+                              )
+                            }
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span>{coord.name}</span>
+                          <span className="font-mono text-[11px] text-slate-500">
+                            ({coord.email})
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Optional Create New Event Coordinator */}
+              <div className="border-t border-slate-200 pt-4 space-y-3.5">
                 <label className="flex items-start gap-2.5 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -648,10 +1071,10 @@ export const EventsModal: React.FC<EventsModalProps> = ({
                   />
                   <div>
                     <div className="text-xs font-semibold text-slate-800">
-                      Provision an Event Coordinator login for this event
+                      Also create a new Event Coordinator login for this event
                     </div>
                     <p className="text-[11px] text-slate-500">
-                      Event Coordinators can sign in only to this event to add and view Partner companies. They cannot edit delegates or view other events.
+                      Event Coordinators can add partners only for their assigned events.
                     </p>
                   </div>
                 </label>
@@ -759,11 +1182,11 @@ export const EventsModal: React.FC<EventsModalProps> = ({
           </form>
         )}
 
-        {/* Footer for List tab */}
-        {activeTab === 'list' && (
+        {/* Footer for List & Coordinators tabs */}
+        {activeTab !== 'create' && (
           <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-3">
             <span className="text-xs text-slate-500">
-              Each event maintains its own isolated partners, delegate registrations, quotas, and freeze lock.
+              One coordinator login can manage partner onboarding across any number of assigned events.
             </span>
             <div className="flex items-center gap-2.5 shrink-0">
               <button

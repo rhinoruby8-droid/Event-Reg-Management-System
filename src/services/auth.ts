@@ -24,12 +24,25 @@ export function authenticateUser(
     };
   }
 
+  const eventIds =
+    matched.role === 'event_coordinator'
+      ? Array.from(
+          new Set([
+            ...(Array.isArray(matched.eventIds) ? matched.eventIds : []),
+            ...(matched.eventId ? [matched.eventId] : []),
+          ])
+        )
+      : matched.eventId
+      ? [matched.eventId]
+      : [];
+
   const session: AuthSession = {
     userId: matched.id,
     email: matched.email,
     name: matched.name,
     role: matched.role,
-    eventId: matched.eventId,
+    eventId: matched.eventId ?? eventIds[0] ?? null,
+    eventIds,
     eventName: matched.eventName,
     partnerId: matched.partnerId,
     partnerName: matched.partnerName,
@@ -90,6 +103,15 @@ export function canAddPartner(session: AuthSession | null): boolean {
 
 export function canManageEvents(session: AuthSession | null): boolean {
   return session?.role === 'super_admin';
+}
+
+export function getCoordinatorEventIds(user: {
+  eventId: string | null;
+  eventIds?: string[];
+}): string[] {
+  const list = Array.isArray(user.eventIds) ? user.eventIds.filter(Boolean) : [];
+  if (list.length > 0) return Array.from(new Set(list));
+  return user.eventId ? [user.eventId] : [];
 }
 
 export function canEditDelegate(

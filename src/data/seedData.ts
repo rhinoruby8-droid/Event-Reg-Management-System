@@ -50,7 +50,7 @@ export const DEMO_PARTNERS: PartnerCompany[] = [
     name: 'Solid Support Pty Ltd',
     tier: 'Platinum Partner',
     standNumber: 'Booth A12',
-    complimentaryQuota: 5,
+    complimentaryQuota: 13,
     awardsQuota: 2,
     primaryContactEmail: 'partner@solidsupport.com.au',
   },
@@ -60,7 +60,7 @@ export const DEMO_PARTNERS: PartnerCompany[] = [
     name: 'Acme Corp Australia',
     tier: 'Gold Partner',
     standNumber: 'Booth B04',
-    complimentaryQuota: 4,
+    complimentaryQuota: 10,
     awardsQuota: 2,
     primaryContactEmail: 'partner@acmecorp.com',
   },
@@ -72,7 +72,7 @@ export const DEMO_PARTNERS: PartnerCompany[] = [
     name: 'Bechtel Controls UK',
     tier: 'Platinum Partner',
     standNumber: 'Booth E01',
-    complimentaryQuota: 6,
+    complimentaryQuota: 12,
     awardsQuota: 3,
     primaryContactEmail: 'partner@bechtel-uk.co.uk',
   },
@@ -82,7 +82,7 @@ export const DEMO_PARTNERS: PartnerCompany[] = [
     name: 'Arup Advisory London',
     tier: 'Gold Partner',
     standNumber: 'Booth F08',
-    complimentaryQuota: 4,
+    complimentaryQuota: 10,
     awardsQuota: 2,
     primaryContactEmail: 'partner@arup-uk.com',
   },
@@ -94,7 +94,7 @@ export const DEMO_PARTNERS: PartnerCompany[] = [
     name: 'Turner Project Controls USA',
     tier: 'Platinum Partner',
     standNumber: 'Booth U10',
-    complimentaryQuota: 5,
+    complimentaryQuota: 10,
     awardsQuota: 2,
     primaryContactEmail: 'partner@turner-usa.com',
   },
@@ -112,7 +112,7 @@ export const DEMO_USERS: UserAccount[] = [
     partnerId: null,
   },
 
-  // 2. Event Coordinators (Each has their own event login to add & manage partners only)
+  // 2. Event Coordinators (Can be assigned to one or multiple events to add partners only)
   {
     id: 'user-coord-aus',
     email: 'coordinator.aus@expo.com',
@@ -120,7 +120,8 @@ export const DEMO_USERS: UserAccount[] = [
     name: 'Marcus Brody',
     role: 'event_coordinator',
     eventId: 'pce-aus-2026',
-    eventName: 'PCE AUS 2026 (Melbourne)',
+    eventIds: ['pce-aus-2026'],
+    eventName: 'PCE AUS 2026',
     partnerId: null,
   },
   {
@@ -130,7 +131,8 @@ export const DEMO_USERS: UserAccount[] = [
     name: 'Gemma Higgins',
     role: 'event_coordinator',
     eventId: 'pce-uk-2026',
-    eventName: 'PCE UK 2026 (London)',
+    eventIds: ['pce-uk-2026'],
+    eventName: 'PCE UK 2026',
     partnerId: null,
   },
   {
@@ -140,7 +142,8 @@ export const DEMO_USERS: UserAccount[] = [
     name: 'Travis Miller',
     role: 'event_coordinator',
     eventId: 'pce-usa-2026',
-    eventName: 'PCE USA 2026 (Orlando)',
+    eventIds: ['pce-usa-2026'],
+    eventName: 'PCE USA 2026',
     partnerId: null,
   },
 

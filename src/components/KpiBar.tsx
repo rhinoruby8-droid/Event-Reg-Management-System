@@ -1,10 +1,11 @@
 import React from 'react';
 import { QuotaSummary } from '../services/quota';
-import { CustomTicketField, Delegate } from '../types';
+import { CustomTicketField, Delegate, PartnerCompany } from '../types';
 
 interface KpiBarProps {
   summary: QuotaSummary;
   scopedDelegates: Delegate[];
+  scopedPartners: PartnerCompany[];
   customTicketFields: CustomTicketField[];
   scopeTitle: string;
   scopeMeta: string;
@@ -14,11 +15,19 @@ interface KpiBarProps {
 export const KpiBar: React.FC<KpiBarProps> = ({
   summary,
   scopedDelegates,
+  scopedPartners,
   customTicketFields,
   scopeTitle,
   scopeMeta,
   validationErrorRows,
 }) => {
+  const getTicketQuotaTotal = (ticketKey: string): number | null => {
+    const configured = scopedPartners.filter(
+      (p) => p.ticketQuotas && typeof p.ticketQuotas[ticketKey] === 'number'
+    );
+    if (configured.length === 0) return null;
+    return configured.reduce((sum, p) => sum + (p.ticketQuotas?.[ticketKey] ?? 0), 0);
+  };
   const passRatio =
     summary.complimentaryQuota > 0
       ? Math.min(100, Math.round((summary.complimentaryUsed / summary.complimentaryQuota) * 100))
@@ -61,15 +70,24 @@ export const KpiBar: React.FC<KpiBarProps> = ({
 
           <div className="h-9 w-px bg-slate-200 hidden md:block shrink-0" />
 
-          {/* Complimentary Pass Quota Bar */}
-          <div className="w-full md:w-64 shrink-0">
-            <div className="flex items-baseline justify-between text-xs mb-1.5">
-              <span className="font-semibold text-slate-700">Complimentary Passes</span>
+          {/* Complimentary Ticket Pool Bar (Day 1 + Day 2 + Day 3) */}
+          <div className="w-full md:w-72 shrink-0">
+            <div className="flex items-baseline justify-between text-xs mb-1">
+              <span className="font-semibold text-slate-700">
+                Comp Tickets{' '}
+                <span className="font-normal text-[11px] text-slate-400">
+                  (D1+D2+D3)
+                </span>
+              </span>
               <span className="font-mono tabular-nums font-semibold text-slate-900">
                 {summary.complimentaryUsed} / {summary.complimentaryQuota}
-                {hasExtras && (
+                {hasExtras ? (
                   <span className="ml-1.5 text-amber-700">
-                    (+{summary.chargeableExtras} Extra)
+                    (+{summary.payableTickets} Payable)
+                  </span>
+                ) : (
+                  <span className="ml-1.5 text-emerald-700 font-medium">
+                    ({summary.complimentaryRemaining} left)
                   </span>
                 )}
               </span>
@@ -80,7 +98,7 @@ export const KpiBar: React.FC<KpiBarProps> = ({
               aria-valuenow={summary.complimentaryUsed}
               aria-valuemin={0}
               aria-valuemax={summary.complimentaryQuota}
-              aria-label="Complimentary pass quota usage"
+              aria-label="Complimentary ticket pool usage"
             >
               <div
                 className={`h-full rounded-full transition-all duration-200 ${
@@ -119,34 +137,71 @@ export const KpiBar: React.FC<KpiBarProps> = ({
           <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 text-xs">
             <div className="flex items-baseline gap-1.5 whitespace-nowrap">
               <span className="text-slate-500">Day 1 Workshop</span>
-              <span className="font-mono tabular-nums font-semibold text-slate-900 text-sm">
-                {summary.day1WorkshopCount}
-              </span>
+              {(() => {
+                const cap = getTicketQuotaTotal('day1Workshop');
+                const over = cap !== null && summary.day1WorkshopCount > cap;
+                return (
+                  <span
+                    className={`font-mono tabular-nums font-semibold text-sm ${
+                      over ? 'text-amber-700' : 'text-slate-900'
+                    }`}
+                  >
+                    {summary.day1WorkshopCount}
+                    {cap !== null ? ` / ${cap}` : ''}
+                  </span>
+                );
+              })()}
             </div>
             <span aria-hidden="true" className="text-slate-300">
               ·
             </span>
             <div className="flex items-baseline gap-1.5 whitespace-nowrap">
               <span className="text-slate-500">Day 2</span>
-              <span className="font-mono tabular-nums font-semibold text-slate-900 text-sm">
-                {summary.day2Count}
-              </span>
+              {(() => {
+                const cap = getTicketQuotaTotal('day2');
+                const over = cap !== null && summary.day2Count > cap;
+                return (
+                  <span
+                    className={`font-mono tabular-nums font-semibold text-sm ${
+                      over ? 'text-amber-700' : 'text-slate-900'
+                    }`}
+                  >
+                    {summary.day2Count}
+                    {cap !== null ? ` / ${cap}` : ''}
+                  </span>
+                );
+              })()}
             </div>
             <span aria-hidden="true" className="text-slate-300">
               ·
             </span>
             <div className="flex items-baseline gap-1.5 whitespace-nowrap">
               <span className="text-slate-500">Day 3</span>
-              <span className="font-mono tabular-nums font-semibold text-slate-900 text-sm">
-                {summary.day3Count}
-              </span>
+              {(() => {
+                const cap = getTicketQuotaTotal('day3');
+                const over = cap !== null && summary.day3Count > cap;
+                return (
+                  <span
+                    className={`font-mono tabular-nums font-semibold text-sm ${
+                      over ? 'text-amber-700' : 'text-slate-900'
+                    }`}
+                  >
+                    {summary.day3Count}
+                    {cap !== null ? ` / ${cap}` : ''}
+                  </span>
+                );
+              })()}
             </div>
             <span aria-hidden="true" className="text-slate-300">
               ·
             </span>
             <div className="flex items-baseline gap-1.5 whitespace-nowrap">
               <span className="text-slate-500">Awards Night</span>
-              <span className="font-mono tabular-nums font-semibold text-slate-900 text-sm">
+              <span
+                className={`font-mono tabular-nums font-semibold text-sm ${
+                  isAwardsOver ? 'text-amber-700' : 'text-slate-900'
+                }`}
+              >
                 {summary.awardsUsed}
               </span>
             </div>
@@ -155,15 +210,28 @@ export const KpiBar: React.FC<KpiBarProps> = ({
             </span>
             <div className="flex items-baseline gap-1.5 whitespace-nowrap">
               <span className="text-slate-500">Stadium Tour</span>
-              <span className="font-mono tabular-nums font-semibold text-slate-900 text-sm">
-                {summary.stadiumTourCount}
-              </span>
+              {(() => {
+                const cap = getTicketQuotaTotal('stadiumTour');
+                const over = cap !== null && summary.stadiumTourCount > cap;
+                return (
+                  <span
+                    className={`font-mono tabular-nums font-semibold text-sm ${
+                      over ? 'text-amber-700' : 'text-slate-900'
+                    }`}
+                  >
+                    {summary.stadiumTourCount}
+                    {cap !== null ? ` / ${cap}` : ''}
+                  </span>
+                );
+              })()}
             </div>
 
             {kpiCustomTickets.map((ticket) => {
               const count = scopedDelegates.filter(
                 (d) => Boolean(d.customTickets?.[ticket.id])
               ).length;
+              const cap = getTicketQuotaTotal(ticket.id);
+              const over = cap !== null && count > cap;
               return (
                 <React.Fragment key={ticket.id}>
                   <span aria-hidden="true" className="text-slate-300">
@@ -171,8 +239,13 @@ export const KpiBar: React.FC<KpiBarProps> = ({
                   </span>
                   <div className="flex items-baseline gap-1.5 whitespace-nowrap">
                     <span className="text-indigo-700 font-medium">{ticket.label}</span>
-                    <span className="font-mono tabular-nums font-semibold text-indigo-900 text-sm">
+                    <span
+                      className={`font-mono tabular-nums font-semibold text-sm ${
+                        over ? 'text-amber-700' : 'text-indigo-900'
+                      }`}
+                    >
                       {count}
+                      {cap !== null ? ` / ${cap}` : ''}
                     </span>
                   </div>
                 </React.Fragment>

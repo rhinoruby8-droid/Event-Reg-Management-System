@@ -94,7 +94,7 @@ export const WorkspaceToolbar: React.FC<WorkspaceToolbarProps> = ({
     { id: 'all', label: 'All', count: filterCounts.all },
     { id: 'dietary', label: 'Dietary Only', count: filterCounts.dietary },
     { id: 'awards', label: 'Awards Night', count: filterCounts.awards },
-    { id: 'chargeable', label: 'Chargeable Extras', count: filterCounts.chargeable },
+    { id: 'chargeable', label: 'Payable Tickets', count: filterCounts.chargeable },
     {
       id: 'errors',
       label: 'Validation Errors',

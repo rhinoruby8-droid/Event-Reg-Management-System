@@ -27,6 +27,7 @@ const ACTION_LABELS: Record<AuditActionType, string> = {
   PARTNER_CREATE: 'Partner Added',
   EVENT_CREATE: 'Event Created',
   COORDINATOR_CREATE: 'Coordinator Added',
+  COORDINATOR_UPDATE: 'Coordinator Events',
   CONFIG_UPDATE: 'Tickets / Titles',
   CHANGE_REQUEST: 'Change Request',
   RESOLVE_REQUEST: 'Request Resolved',
@@ -168,6 +169,7 @@ export const AuditDrawer: React.FC<AuditDrawerProps> = ({
                 <option value="PARTNER_CREATE">Partner Added</option>
                 <option value="EVENT_CREATE">Event Created</option>
                 <option value="COORDINATOR_CREATE">Coordinator Added</option>
+                <option value="COORDINATOR_UPDATE">Coordinator Events</option>
                 <option value="CONFIG_UPDATE">Tickets &amp; Titles</option>
               </select>
             </div>

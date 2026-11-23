@@ -18,7 +18,7 @@ import {
 import { Header } from './components/Header';
 import { KpiBar } from './components/KpiBar';
 import { LoginScreen } from './components/LoginScreen';
-import { QuotaModal } from './components/QuotaModal';
+import { QuotaModal, PartnerQuotaUpdate } from './components/QuotaModal';
 import { TicketColumnModal } from './components/TicketColumnModal';
 import { ToastContainer } from './components/ToastContainer';
 import { ExportReportType, WorkspaceToolbar } from './components/WorkspaceToolbar';
@@ -28,6 +28,7 @@ import {
   canCreateDelegate,
   canEditDelegate,
   clearSession,
+  getCoordinatorEventIds,
   getStoredSession,
   isEventCoordinator,
   isSuperAdmin,
@@ -40,7 +41,11 @@ import {
   exportMarketingOptIn,
   ImportMode,
 } from './services/excel';
-import { computeQuotaSummary, recalculateTicketTypes } from './services/quota';
+import {
+  computePartnerDayPoolUsage,
+  computeQuotaSummary,
+  recalculateTicketTypes,
+} from './services/quota';
 import {
   loadPortalState,
   resetPortalState,
@@ -92,6 +97,7 @@ export default function App() {
 
   // Workspace view filters
   const [selectedPartnerFilter, setSelectedPartnerFilter] = useState<string>('all');
+  const [coordinatorEventId, setCoordinatorEventId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<QuickFilter>('all');
   const [focusNewRowId, setFocusNewRowId] = useState<string | null>(null);
@@ -99,7 +105,7 @@ export default function App() {
   // Modals & Drawers
   const [eventsModalState, setEventsModalState] = useState<{
     open: boolean;
-    tab: 'list' | 'create';
+    tab: 'list' | 'coordinators' | 'create';
   }>({ open: false, tab: 'list' });
   const [addPartnerOpen, setAddPartnerOpen] = useState(false);
   const [bulkPasteOpen, setBulkPasteOpen] = useState(false);
@@ -143,9 +149,19 @@ export default function App() {
   const adminMode = isSuperAdmin(session);
   const coordinatorMode = isEventCoordinator(session);
 
+  // Live assigned events for the signed-in Event Coordinator (supports 1 or multiple assigned events)
+  const coordinatorAssignedEvents = useMemo<EventItem[]>(() => {
+    if (!session || !coordinatorMode) return [];
+    const liveAccount = portalState.users.find((u) => u.id === session.userId);
+    const assignedIds = getCoordinatorEventIds(liveAccount ?? session);
+    const matched = portalState.events.filter((e) => assignedIds.includes(e.id));
+    return matched.length > 0 ? matched : portalState.events.slice(0, 1);
+  }, [session, coordinatorMode, portalState.users, portalState.events]);
+
   // Resolve active event ID based on RBAC:
   // - Global Super Admin switches freely across all events
-  // - Event Coordinator & Partner Admin are strictly locked to their assigned event
+  // - Event Coordinator switches strictly within their assigned event(s)
+  // - Partner Admin is strictly locked to their assigned event
   const activeEventId = useMemo(() => {
     const fallbackId = portalState.events[0]?.id || 'pce-aus-2026';
     if (!session) return portalState.currentEventId || fallbackId;
@@ -154,10 +170,27 @@ export default function App() {
         ? portalState.currentEventId
         : fallbackId;
     }
+    if (coordinatorMode) {
+      if (
+        coordinatorEventId &&
+        coordinatorAssignedEvents.some((e) => e.id === coordinatorEventId)
+      ) {
+        return coordinatorEventId;
+      }
+      return coordinatorAssignedEvents[0]?.id || fallbackId;
+    }
     return session.eventId && portalState.events.some((e) => e.id === session.eventId)
       ? session.eventId
       : fallbackId;
-  }, [session, adminMode, portalState.currentEventId, portalState.events]);
+  }, [
+    session,
+    adminMode,
+    coordinatorMode,
+    coordinatorEventId,
+    coordinatorAssignedEvents,
+    portalState.currentEventId,
+    portalState.events,
+  ]);
 
   const activeEvent = useMemo<EventItem>(() => {
     return (
@@ -347,11 +380,27 @@ export default function App() {
     setSearchQuery('');
     setActiveFilter('all');
 
+    if (nextSession.role === 'event_coordinator') {
+      const assignedIds = getCoordinatorEventIds(nextSession);
+      setCoordinatorEventId(assignedIds[0] || '');
+    } else {
+      setCoordinatorEventId('');
+    }
+
+    const assignedEventNames =
+      nextSession.role === 'event_coordinator'
+        ? getCoordinatorEventIds(nextSession)
+            .map((id) => portalState.events.find((e) => e.id === id)?.name || id)
+            .join(', ')
+        : '';
+
     const roleSubtitle =
       nextSession.role === 'super_admin'
         ? 'Global Super Admin — Full multi-event access enabled'
         : nextSession.role === 'event_coordinator'
-        ? `Event Coordinator — Scoped to adding partners for ${nextSession.eventName || 'your event'}`
+        ? `Event Coordinator — Scoped to adding partners for ${
+            assignedEventNames || nextSession.eventName || 'your event'
+          }`
         : `Partner Admin — Scoped to ${nextSession.partnerName}${
             nextSession.eventName ? ` (${nextSession.eventName})` : ''
           }`;
@@ -415,12 +464,14 @@ export default function App() {
         name: payload.coordinatorName,
         role: 'event_coordinator',
         eventId,
+        eventIds: [eventId],
         eventName: payload.name,
         partnerId: null,
       };
     }
 
     setPortalState((prev) => {
+      const nextEvents = [...prev.events, newEvent];
       const nextLogs = [...prev.auditLogs];
       nextLogs.unshift(
         createAuditEntry({
@@ -433,7 +484,36 @@ export default function App() {
         })
       );
 
+      // Attach any selected existing coordinators to the new event
+      const assignSet = new Set(payload.assignCoordinatorIds);
+      let nextUsers = prev.users.map((u) => {
+        if (u.role === 'event_coordinator' && assignSet.has(u.id)) {
+          const updatedIds = Array.from(new Set([...getCoordinatorEventIds(u), eventId]));
+          const joinedNames = updatedIds
+            .map((id) => nextEvents.find((e) => e.id === id)?.name || id)
+            .join(', ');
+          nextLogs.unshift(
+            createAuditEntry({
+              session,
+              action: 'COORDINATOR_UPDATE',
+              eventId,
+              partnerId: null,
+              delegateName: u.name,
+              summary: `Assigned existing coordinator ${u.email} to ${payload.name} (now on ${updatedIds.length} events)`,
+            })
+          );
+          return {
+            ...u,
+            eventId: u.eventId ?? eventId,
+            eventIds: updatedIds,
+            eventName: joinedNames,
+          };
+        }
+        return u;
+      });
+
       if (newCoordinator) {
+        nextUsers = [...nextUsers, newCoordinator];
         nextLogs.unshift(
           createAuditEntry({
             session,
@@ -448,10 +528,10 @@ export default function App() {
 
       return {
         ...prev,
-        events: [...prev.events, newEvent],
+        events: nextEvents,
         currentEventId: payload.switchToEvent ? eventId : prev.currentEventId,
         isGlobalFrozen: payload.switchToEvent ? false : prev.isGlobalFrozen,
-        users: newCoordinator ? [...prev.users, newCoordinator] : prev.users,
+        users: nextUsers,
         auditLogs: nextLogs,
       };
     });
@@ -467,14 +547,26 @@ export default function App() {
       `Event "${payload.name}" created`,
       newCoordinator
         ? `Coordinator login provisioned: ${newCoordinator.email}`
+        : payload.assignCoordinatorIds.length > 0
+        ? `Assigned ${payload.assignCoordinatorIds.length} existing ${
+            payload.assignCoordinatorIds.length === 1 ? 'coordinator' : 'coordinators'
+          }.`
         : `${payload.city} · ${payload.dates}`
     );
   };
 
   const handleCreateCoordinator = (payload: NewCoordinatorPayload) => {
     if (!session || !adminMode) return;
-    const targetEvent = portalState.events.find((e) => e.id === payload.eventId);
-    if (!targetEvent) return;
+    const validIds = Array.from(
+      new Set(
+        payload.eventIds.filter((id) => portalState.events.some((e) => e.id === id))
+      )
+    );
+    if (validIds.length === 0) return;
+
+    const eventNames = validIds
+      .map((id) => portalState.events.find((e) => e.id === id)?.name || id)
+      .join(', ');
 
     const newCoordinator: UserAccount = {
       id: `user-coord-${Date.now().toString(36)}`,
@@ -482,8 +574,9 @@ export default function App() {
       password: payload.password,
       name: payload.name,
       role: 'event_coordinator',
-      eventId: targetEvent.id,
-      eventName: targetEvent.name,
+      eventId: validIds[0],
+      eventIds: validIds,
+      eventName: eventNames,
       partnerId: null,
     };
 
@@ -491,10 +584,10 @@ export default function App() {
       const entry = createAuditEntry({
         session,
         action: 'COORDINATOR_CREATE',
-        eventId: targetEvent.id,
+        eventId: validIds.length === 1 ? validIds[0] : null,
         partnerId: null,
         delegateName: payload.name,
-        summary: `Added Event Coordinator ${payload.email} for ${targetEvent.name} (Add Partners Only)`,
+        summary: `Created Event Coordinator ${payload.email} assigned to ${eventNames} (Add Partners Only)`,
       });
       return {
         ...prev,
@@ -505,8 +598,68 @@ export default function App() {
 
     pushToast(
       'success',
-      `Coordinator added for ${targetEvent.name}`,
-      `Login: ${payload.email}`
+      `Coordinator "${payload.name}" created`,
+      `Assigned to ${eventNames} · Login: ${payload.email}`
+    );
+  };
+
+  const handleUpdateCoordinatorEvents = (userId: string, nextEventIds: string[]) => {
+    if (!session || !adminMode) return;
+    const validIds = Array.from(
+      new Set(
+        nextEventIds.filter((id) => portalState.events.some((e) => e.id === id))
+      )
+    );
+    if (validIds.length === 0) return;
+
+    const target = portalState.users.find(
+      (u) => u.id === userId && u.role === 'event_coordinator'
+    );
+    if (!target) return;
+
+    const eventNames = validIds
+      .map((id) => portalState.events.find((e) => e.id === id)?.name || id)
+      .join(', ');
+
+    setPortalState((prev) => {
+      const nextUsers = prev.users.map((u) =>
+        u.id === userId
+          ? {
+              ...u,
+              eventId: validIds[0],
+              eventIds: validIds,
+              eventName: eventNames,
+            }
+          : u
+      );
+
+      const oldNames = getCoordinatorEventIds(target)
+        .map((id) => prev.events.find((e) => e.id === id)?.name || id)
+        .join(', ');
+
+      const entry = createAuditEntry({
+        session,
+        action: 'COORDINATOR_UPDATE',
+        eventId: null,
+        partnerId: null,
+        delegateName: target.name,
+        field: 'Assigned Events',
+        oldValue: oldNames,
+        newValue: eventNames,
+        summary: `Updated ${target.email} assigned events: ${oldNames} → ${eventNames}`,
+      });
+
+      return {
+        ...prev,
+        users: nextUsers,
+        auditLogs: [entry, ...prev.auditLogs],
+      };
+    });
+
+    pushToast(
+      'success',
+      `Updated events for ${target.name}`,
+      `Assigned to: ${eventNames}`
     );
   };
 
@@ -517,6 +670,66 @@ export default function App() {
       nextValue: string | boolean
     ) => {
       if (!session) return;
+
+      const isDayTicketField =
+        field === 'day1Workshop' || field === 'day2' || field === 'day3';
+
+      const currentTarget = portalState.delegates.find((d) => d.id === delegateId);
+      if (!currentTarget) return;
+      const currentEvent = portalState.events.find(
+        (e) => e.id === currentTarget.eventId
+      );
+      if (!canEditDelegate(session, currentTarget, Boolean(currentEvent?.isGlobalFrozen))) {
+        return;
+      }
+      if (currentTarget[field] === nextValue) return;
+
+      let dayTicketNotice: {
+        type: 'success' | 'warning';
+        title: string;
+        detail: string;
+      } | null = null;
+
+      if (isDayTicketField) {
+        const partner = portalState.partners.find(
+          (p) => p.id === currentTarget.partnerId
+        );
+        if (partner) {
+          const partnerDelegatesBefore = portalState.delegates.filter(
+            (d) => d.partnerId === partner.id
+          );
+          const partnerDelegatesAfter = partnerDelegatesBefore.map((d) =>
+            d.id === delegateId ? { ...d, [field]: nextValue } : d
+          );
+          const beforeUsage = computePartnerDayPoolUsage(
+            partner,
+            partnerDelegatesBefore
+          );
+          const afterUsage = computePartnerDayPoolUsage(
+            partner,
+            partnerDelegatesAfter
+          );
+          if (
+            nextValue === true &&
+            afterUsage.payableTickets > beforeUsage.payableTickets
+          ) {
+            dayTicketNotice = {
+              type: 'warning',
+              title: `Payable ticket added (${FIELD_LABELS[field]})`,
+              detail: `${partner.name}: ${afterUsage.compUsed}/${afterUsage.complimentaryQuota} Comp used · +${afterUsage.payableTickets} Payable`,
+            };
+          } else {
+            dayTicketNotice = {
+              type: 'success',
+              title: `Saved ${FIELD_LABELS[field]}`,
+              detail:
+                afterUsage.payableTickets > 0
+                  ? `Set to ${nextValue ? 'Yes' : 'No'} · ${afterUsage.compUsed}/${afterUsage.complimentaryQuota} Comp (+${afterUsage.payableTickets} Payable)`
+                  : `Set to ${nextValue ? 'Yes' : 'No'} · ${afterUsage.compRemaining} Comp ${afterUsage.compRemaining === 1 ? 'ticket' : 'tickets'} left`,
+            };
+          }
+        }
+      }
 
       setPortalState((prev) => {
         const target = prev.delegates.find((d) => d.id === delegateId);
@@ -538,9 +751,13 @@ export default function App() {
           updatedBy: session.email,
         };
 
-        const nextDelegates = prev.delegates.map((d) =>
+        const mappedDelegates = prev.delegates.map((d) =>
           d.id === delegateId ? updatedDelegate : d
         );
+
+        const nextDelegates = isDayTicketField
+          ? recalculateTicketTypes(mappedDelegates, prev.partners)
+          : mappedDelegates;
 
         const fieldLabel = FIELD_LABELS[field];
         const entry = createAuditEntry({
@@ -563,15 +780,19 @@ export default function App() {
         };
       });
 
-      pushToast(
-        'success',
-        `Saved ${FIELD_LABELS[field]}`,
-        typeof nextValue === 'boolean'
-          ? `Set to ${nextValue ? 'Yes' : 'No'}`
-          : undefined
-      );
+      if (dayTicketNotice) {
+        pushToast(dayTicketNotice.type, dayTicketNotice.title, dayTicketNotice.detail);
+      } else {
+        pushToast(
+          'success',
+          `Saved ${FIELD_LABELS[field]}`,
+          typeof nextValue === 'boolean'
+            ? `Set to ${nextValue ? 'Yes' : 'No'}`
+            : undefined
+        );
+      }
     },
-    [session, pushToast]
+    [session, portalState.delegates, portalState.events, portalState.partners, pushToast]
   );
 
   const handleUpdateCustomTicketValue = useCallback(
@@ -1198,9 +1419,7 @@ export default function App() {
     }
   };
 
-  const handleSaveQuotas = (
-    updates: { partnerId: string; complimentaryQuota: number; awardsQuota: number }[]
-  ) => {
+  const handleSaveQuotas = (updates: PartnerQuotaUpdate[]) => {
     if (!session || !adminMode) return;
 
     setPortalState((prev) => {
@@ -1208,10 +1427,21 @@ export default function App() {
       const nextPartners = prev.partners.map((partner) => {
         const upd = updates.find((u) => u.partnerId === partner.id);
         if (!upd) return partner;
-        if (
+
+        const prevTicketJson = JSON.stringify(partner.ticketQuotas || {});
+        const nextTicketJson = JSON.stringify(upd.ticketQuotas || {});
+        const prevCatJson = JSON.stringify(partner.categoryQuotas || {});
+        const nextCatJson = JSON.stringify(upd.categoryQuotas || {});
+
+        const hasChanged =
           upd.complimentaryQuota !== partner.complimentaryQuota ||
-          upd.awardsQuota !== partner.awardsQuota
-        ) {
+          upd.awardsQuota !== partner.awardsQuota ||
+          prevTicketJson !== nextTicketJson ||
+          prevCatJson !== nextCatJson;
+
+        if (hasChanged) {
+          const extraTicketCount = Object.keys(upd.ticketQuotas).length;
+          const extraCatCount = Object.keys(upd.categoryQuotas).length;
           newLogs.unshift(
             createAuditEntry({
               session,
@@ -1219,10 +1449,14 @@ export default function App() {
               eventId: partner.eventId,
               partnerId: partner.id,
               delegateName: partner.name,
-              field: 'Pass Quotas',
+              field: 'Pass & Ticket Quotas',
               oldValue: `${partner.complimentaryQuota} Comp / ${partner.awardsQuota} Awards`,
-              newValue: `${upd.complimentaryQuota} Comp / ${upd.awardsQuota} Awards`,
-              summary: `Updated ${partner.name} quotas to ${upd.complimentaryQuota} complimentary passes and ${upd.awardsQuota} Awards Night seats`,
+              newValue: `${upd.complimentaryQuota} Comp / ${upd.awardsQuota} Awards${
+                extraTicketCount > 0 ? ` + ${extraTicketCount} session caps` : ''
+              }${extraCatCount > 0 ? ` + ${extraCatCount} category caps` : ''}`,
+              summary: `Updated ${partner.name} ticket quotas (${upd.complimentaryQuota} Complimentary, ${upd.awardsQuota} Awards Night${
+                extraTicketCount > 0 ? `, ${extraTicketCount} session/custom ticket caps` : ''
+              }${extraCatCount > 0 ? `, ${extraCatCount} category caps` : ''})`,
             })
           );
         }
@@ -1230,6 +1464,8 @@ export default function App() {
           ...partner,
           complimentaryQuota: upd.complimentaryQuota,
           awardsQuota: upd.awardsQuota,
+          ticketQuotas: upd.ticketQuotas,
+          categoryQuotas: upd.categoryQuotas,
         };
       });
 
@@ -1244,8 +1480,8 @@ export default function App() {
 
     pushToast(
       'success',
-      'Partner quotas updated',
-      'Complimentary and Chargeable Extra pass badges recalculated.'
+      'Partner ticket quotas updated',
+      'All complimentary ticket balances and Payable allocations recalculated.'
     );
   };
 
@@ -1497,6 +1733,14 @@ export default function App() {
 
         <CoordinatorWorkspace
           activeEvent={activeEvent}
+          assignedEvents={coordinatorAssignedEvents}
+          onSwitchEvent={(evId) => {
+            setCoordinatorEventId(evId);
+            const target = coordinatorAssignedEvents.find((e) => e.id === evId);
+            if (target) {
+              pushToast('info', `Switched to ${target.name}`, `${target.city} · ${target.dates}`);
+            }
+          }}
           partners={eventPartners}
           delegates={eventDelegates}
           users={portalState.users}
@@ -1601,6 +1845,7 @@ export default function App() {
       <KpiBar
         summary={quotaSummary}
         scopedDelegates={scopedDelegates}
+        scopedPartners={scopedPartners}
         customTicketFields={portalState.customTicketFields}
         scopeTitle={scopeTitle}
         scopeMeta={scopeMeta}
@@ -1713,14 +1958,20 @@ export default function App() {
             onSwitchEvent={handleSwitchEvent}
             onCreateEvent={handleCreateEvent}
             onCreateCoordinator={handleCreateCoordinator}
+            onUpdateCoordinatorEvents={handleUpdateCoordinatorEvents}
           />
           <QuotaModal
             isOpen={quotaModalOpen}
             onClose={() => setQuotaModalOpen(false)}
+            eventName={activeEvent.name}
             partners={eventPartners}
             delegates={eventDelegates}
+            customTicketFields={portalState.customTicketFields}
+            ticketCategories={portalState.ticketCategories}
+            columnTitles={portalState.columnTitles}
             onSaveQuotas={handleSaveQuotas}
             onOpenAddPartner={() => setAddPartnerOpen(true)}
+            onOpenAddTicketType={() => setTicketColumnModalOpen(true)}
           />
           <TicketColumnModal
             isOpen={ticketColumnModalOpen}
