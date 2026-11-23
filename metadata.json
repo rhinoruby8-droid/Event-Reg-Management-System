@@ -1,0 +1,6 @@
+{
+  "name": "PCE AUS 2026 — Partner Registration Portal",
+  "description": "Enterprise delegate registration spreadsheet portal for Project Controls Expo Australia 2026 partners and event administrators, featuring inline editing, automated pass quota rules, SheetJS Excel import/export, RBAC, and full audit logging.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
